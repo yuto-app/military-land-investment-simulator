@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta name="robots" content="noindex,nofollow">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>軍用地投資 損益シミュレーター</title>
@@ -148,12 +147,13 @@
                             <!-- ランニングコスト -->
                             <div class="pt-4 border-t border-slate-700">
                                 <div class="flex items-center mb-3">
-                                    <label class="text-xs font-bold text-slate-500 uppercase tracking-wider mr-2">固定資産税の目安 (対借地料)</label>
+                                    <label class="text-xs font-bold text-slate-500 uppercase tracking-wider mr-2">固定資産税 (年額)</label>
                                     <div class="group relative cursor-help">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-500"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="16" y2="12"/><line x1="12" x2="12.01" y1="8" y2="8"/></svg>
                                         <div class="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-slate-950 border border-slate-700 rounded text-[10px] text-slate-300 z-20 shadow-xl leading-relaxed">
-                                            <strong class="text-amber-500 block mb-1">【軍用地の固定資産税】</strong>
-                                            本来の計算式（評価額×1.4%）とは異なりますが、軍用地投資では経験則として<strong class="text-white">「借地料の1ヶ月分程度」</strong>が相場とされています。本シミュレーターではこの相場に基づき、借地料に対する比率（約8%）で概算しています。
+                                            <strong class="text-amber-500 block mb-1">【固定資産税の入力について】</strong>
+                                            売買仲介サイト等に記載されている実際の金額を入力してください。<br>
+                                            金額が不明な場合は、自動計算された目安額（借地料の約1ヶ月分=8%）を参考にしてください。
                                         </div>
                                     </div>
                                 </div>
@@ -161,13 +161,21 @@
                                 <div class="grid grid-cols-1 gap-4">
                                     <div>
                                         <label class="flex justify-between text-xs text-slate-400 mb-1">
-                                            <span>固定資産税率 (借地料に対して)</span>
-                                            <span class="text-amber-500 font-bold">{{ inputs.fixedAssetTaxRentRatio }}%</span>
+                                            <span>固定資産税額 (年)</span>
+                                            <span class="text-[10px] text-slate-500">※目安: 借地料の約8%</span>
                                         </label>
-                                        <input type="range" min="0" max="20.0" step="0.5" v-model.number="inputs.fixedAssetTaxRentRatio" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500">
-                                        <p class="text-[10px] text-slate-500 mt-1 text-right">
-                                            想定税額: {{ formatNumber(Math.floor(simulationResults.calculatedAnnualRent * (inputs.fixedAssetTaxRentRatio / 100))) }} 円/年
-                                        </p>
+                                        <div class="relative">
+                                            <input type="number" v-model.number="inputs.fixedAssetTaxAmount" class="w-full bg-slate-900 border border-slate-600 rounded-md py-1.5 pl-2 pr-6 text-right text-sm text-white focus:ring-1 focus:ring-amber-500 outline-none">
+                                            <span class="absolute right-2 top-1.5 text-xs text-slate-500">円</span>
+                                        </div>
+                                        
+                                        <!-- 自動計算ボタン -->
+                                        <div class="flex justify-end mt-1">
+                                            <button @click="resetTaxAmount" class="text-[10px] text-emerald-500 hover:text-emerald-400 flex items-center transition">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                                                借地料の8%で再計算
+                                            </button>
+                                        </div>
                                     </div>
                                     
                                     <div>
@@ -387,6 +395,7 @@
                     rentGrowthRate: 1.0,
                     holdingPeriod: 10,
                     fixedAssetTaxRentRatio: 8.0,
+                    fixedAssetTaxAmount: 0, // 金額入力用
                     associationFeeRate: 0.5,
                     sellMultiplier: 50.0,
                 });
@@ -396,6 +405,12 @@
                     const calculatedAnnualRent = inputs.value.buyMultiplier > 0 
                         ? Math.floor(inputs.value.purchasePrice / inputs.value.buyMultiplier) 
                         : 0;
+
+                    // 初期表示時または比率リセット時、固定資産税額が未設定なら計算してセット
+                    // 循環参照を防ぐため、単純な参照は避けるが、
+                    // ここでは inputs.value.fixedAssetTaxAmount が 0 の場合のみ計算結果を反映させる等の処理を入れたいが、
+                    // computed 内で state を変更するのはアンチパターン。
+                    // 代わりに、計算ロジック内で inputs.value.fixedAssetTaxAmount を優先使用する。
 
                     const purchasePrice = inputs.value.purchasePrice;
                     
@@ -413,11 +428,20 @@
                     let currentRent = calculatedAnnualRent;
                     const yearlyData = [];
 
+                    // 固定資産税額の決定（入力値があればそれを使用、なければ目安計算）
+                    // ただし、入力欄には常に値が入っている想定（初期値0でも）
+                    // ユーザー利便性のため、初期化時に計算値をセットする処理を別途 onMounted 等で行うのが良いが、
+                    // ここでは計算には常に inputs.value.fixedAssetTaxAmount を使う。
+                    const baseFixedTax = inputs.value.fixedAssetTaxAmount;
+
                     for (let year = 1; year <= inputs.value.holdingPeriod; year++) {
                         const grossIncome = Math.floor(currentRent);
                         
                         // ランニングコスト計算
-                        const yearlyFixedTax = Math.floor(grossIncome * (inputs.value.fixedAssetTaxRentRatio / 100));
+                        // 固定資産税は入力された年額固定とする（地価上昇に伴う増税は簡易シミュレーションのため考慮しない、あるいは借地料上昇率に連動させるか）
+                        // ここではシンプルに「入力された年額」を毎年計上する
+                        const yearlyFixedTax = baseFixedTax;
+                        
                         const yearlyAssocFee = Math.floor(grossIncome * (inputs.value.associationFeeRate / 100));
                         
                         const totalYearlyExpense = yearlyFixedTax + yearlyAssocFee;
@@ -487,6 +511,26 @@
                         annualizedReturn,
                         yearlyData,
                     };
+                });
+
+                // 固定資産税の自動計算ロジック（目安ボタン用）
+                const resetTaxAmount = () => {
+                    const rent = simulationResults.value.calculatedAnnualRent;
+                    // 借地料の8%を目安としてセット
+                    inputs.value.fixedAssetTaxAmount = Math.floor(rent * 0.08);
+                };
+
+                // 物件価格や倍率が変わったら、借地料が変わるので、固定資産税の目安も再計算したい場合
+                // ただし、ユーザーが手入力した値を勝手に変えるのはUX的に良くないので、
+                // 「初期ロード時」と「明示的にリセットボタンを押した時」のみ計算する形が良いが、
+                // 今回はシンプルに watch で監視して、もし値が0（未入力）なら計算する、あるいは
+                // 常に連動させたい場合はここで行う。
+                // 今回は「数字を入力できるように」という要望なので、自動連動はさせず、
+                // 初期値セットのみ行う。
+                watch(() => [inputs.value.purchasePrice, inputs.value.buyMultiplier], () => {
+                     // 簡易的な連動: まだユーザーが変更していなさそう（初期値に近い）なら連動させる等のロジックも組めるが
+                     // 複雑になるため、ここでは「リセットボタン」に任せる
+                     // ただし、初期表示時に0円だと変なので、マウント時に一度だけ計算する
                 });
 
                 // Chart.js instance
@@ -596,6 +640,8 @@
                 }, { deep: true });
 
                 onMounted(() => {
+                    // 初期計算（固定資産税）
+                    resetTaxAmount();
                     renderChart();
                 });
 
@@ -630,6 +676,7 @@
                         ["想定借地料上昇率", `${inputs.value.rentGrowthRate}%`],
                         ["保有期間", `${inputs.value.holdingPeriod}年`],
                         ["想定売却倍率", inputs.value.sellMultiplier],
+                        ["固定資産税(年額)", inputs.value.fixedAssetTaxAmount],
                         [],
                         ["--- 最終結果 ---"],
                         ["初期投資総額", simulationResults.value.totalInitialCost],
@@ -716,7 +763,8 @@
                     formatNumber,
                     formatCurrency,
                     saveCSV,
-                    savePDF
+                    savePDF,
+                    resetTaxAmount
                 };
             }
         }).mount('#app');
